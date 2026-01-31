@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html>
+<meta charset="utf-8">
+    <head><title>OpenID Connect/KeyCloak Example</title>
+    <script>
+        function getCookies(){
+            return document.cookie.split(';').reduce((acc, cookie) => {
+                const [key, value] = cookie.split('=').map(c => c.trim());
+                if (key) acc[key] = decodeURIComponent(value);
+                return acc;
+            }, {});
+        }
+
+        function existsValue(cookies, name){
+            if(undefined == cookies[name] || 0 >= cookies[name].length){
+                return false;
+            }
+            return true;
+        }
+
+        var check_digits = undefined;
+        function set_check_digits(){
+            var cookies = getCookies();
+            if(existsValue(cookies, "check_digits")){
+                check_digits = cookies["check_digits"];
+                document.cookie = "check_digits=; max-age=0"; // XSS対策
+                return true;
+            }
+            return false;
+        }
+
+        window.onload = function(){
+            if(!set_check_digits()){
+                check_digits = undefined;
+            }
+        };
+
+        function login(){
+            if(undefined == check_digits){
+               window.location.href = "http://localhost:18080/login";
+               return false;
+            }
+        }
+  
+        function getJson(){
+            if(undefined == check_digits){
+                alert("ログインしてから問い合わせしてください");
+                return false;
+            }
+            var form = document.getElementsByTagName('form')[0];
+            var ta_check_digits = form.getElementsByTagName('textarea')[0];
+            var ta_json = form.getElementsByTagName('textarea')[1];
+            var req = new XMLHttpRequest();
+            req.onreadystatechange = function() {
+                if (req.readyState == 4) {
+                    if(req.status == 200){
+                        ta_json.value = req.responseText;
+                        set_check_digits();
+                    } else {
+                        ta_json.value = req.responseText;
+                    }
+                } else {
+                }
+            }
+            req.open('GET', "http://localhost:18080/api", true);
+            req.setRequestHeader('Authorization', 'Bearer ' + check_digits);
+            req.send(null);
+            ta_check_digits.value = check_digits;
+            return false;
+        }
+
+        function logout(){
+            if(undefined == check_digits){
+                alert("ログインしてからログアウトしてください");
+                return false;
+            }
+            var req = new XMLHttpRequest();
+            req.onreadystatechange = function() {
+                if (req.readyState == 4) {
+                    if(req.status == 200){
+                        check_digits = undefined;
+                        var form = document.getElementsByTagName('form')[0];
+                        var ta_check_digits = form.getElementsByTagName('textarea')[0];
+                        ta_check_digits.value = "";
+                    } else {
+                        alert("Error: " + req.responseText);
+                    }
+                } else {
+                }
+            }
+            req.open('GET', "http://localhost:18080/logout", true);
+            req.setRequestHeader('Authorization', 'Bearer ' + check_digits);
+            req.send(null);
+            return false;
+        }
+    </script><style>
+        h1 { font-size: 120%; text-align: center; } 
+        h2 { font-size: 110%; } 
+        textarea { width: 100%; }
+        form div { width: 100%; text-align: center; }
+    </style></head>
+    <body><form><h1>OpenID Connect/KeyCloak Example</h1><h2>Check Digits</h2><textarea></textarea><h2>JSON</h2><textarea></textarea>
+        <div><button onclick = "return login();">Login</button><button onclick = "return getJson();">Query</button><button onclick = "return logout();">Logout</button><input type="reset" value="Reset" /></div></form></body>
+</html>

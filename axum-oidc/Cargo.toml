@@ -1,0 +1,26 @@
+[package]
+name = "axum-oidc"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+axum = "0.7"
+axum-extra = { version = "0.9", features = ["typed-header", "cookie"] }
+headers = "0.4"
+tokio = { version = "1", features = ["full"] }
+openidconnect = { version = "3.5.0", features = ["reqwest"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls"] }
+url = "2"
+anyhow = "1"
+sha2 = "0.10"
+tower-http = { version = "0.6.8", features = ["fs"] }
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = 'abort'
+strip = "symbols"
+opt-level = "z"
+
