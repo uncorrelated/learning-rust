@@ -11,6 +11,7 @@ use axum_extra::{
     extract::cookie::{Cookie, CookieJar},
     headers::{Authorization, authorization::Bearer},
 };
+use axum_server::tls_rustls::RustlsConfig;
 use openidconnect::{
     AuthenticationFlow, ClaimsVerificationError, ClientId, ClientSecret, CsrfToken,
     EmptyAdditionalClaims, IdTokenClaims, IssuerUrl, Nonce, OAuth2TokenResponse, RedirectUrl,
@@ -22,9 +23,11 @@ use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::env;
+use std::path::PathBuf;
 use std::str::FromStr;
 use tokio::{net::TcpListener, signal};
 use tower_http::services::ServeDir;
+use std::net::{SocketAddr};
 
 const HOME_PATH: &str = "/";
 const LOGIN_PATH: &str = "/login";
@@ -35,7 +38,9 @@ const LOGOUT_PATH: &str = "/logout";
 // Keycloakの設定など環境変数を反映する部分
 #[derive(Clone)]
 struct Info {
+    client_protocol: String,
     client_hostname: String,
+    client_port: u16,
     client_id: String,
     client_secret: String,
     keycloak_url: String,
@@ -44,6 +49,7 @@ struct Info {
     nonce_salt: String,
     csrf_salt: String,
     pkce_method: i8,
+    is_secure: bool,
 }
 
 #[derive(Clone)]
@@ -62,7 +68,9 @@ struct AuthRequest {
 async fn main() -> anyhow::Result<()> {
     // デフォルトのCLIENT_SECRETは開発用のモノなので心配無用
     let info = Info {
-        client_hostname: env::var("CLIENT_HOSTNAME").unwrap_or("localhost:18080".to_string()),
+        client_protocol: env::var("CLIENT_PROTOCOL").unwrap_or("http".to_string()),
+        client_hostname: env::var("CLIENT_HOSTNAME").unwrap_or("localhost".to_string()),
+        client_port: env::var("CLIENT_PORT").unwrap_or("18080".to_string()).parse::<u16>().expect("CLIENT_PORT must be a valid u16 number"),
         client_id: env::var("CLIENT_ID").unwrap_or("rust-web-app".to_string()),
         client_secret: env::var("CLIENT_SECRET")
             .unwrap_or("V7WuCUs2FYUW45tDK6YPifKhCl4HKDkW".to_string()),
@@ -71,8 +79,12 @@ async fn main() -> anyhow::Result<()> {
         keycloak_logout_url: env::var("KEYCLOAK_LOGOUT_URL").unwrap_or(
             "http://localhost:8080/realms/DevRealm/protocol/openid-connect/logout".to_string(),
         ),
-        redirect_url: env::var("REDIRECT_URL")
-            .unwrap_or("http://localhost:18080/callback".to_string()),
+        redirect_url: {
+            let p = env::var("CLIENT_PROTOCOL").unwrap_or("http".to_string());
+            let ip = env::var("CLIENT_HOSTNAME").unwrap_or("localhost".to_string());
+            let port = env::var("CLIENT_PORT").unwrap_or("18080".to_string());
+            format!("{}://{}:{}{}", p, ip, port, REDIRECT_PATH)
+        },
         nonce_salt: env::var("NONCE_SALT").unwrap_or("a secret phrase".to_string()),
         csrf_salt: env::var("CSRF_SALT").unwrap_or("another secret phrase".to_string()),
         pkce_method: match env::var("PKCE_METHOD") {
@@ -83,6 +95,9 @@ async fn main() -> anyhow::Result<()> {
             },
             Err(_) => 0,
         },
+        is_secure: env::var("CLIENT_PROTOCOL")
+            .unwrap_or("http".to_string())
+            .starts_with("https"),
     };
 
     let provider_metadata = CoreProviderMetadata::discover_async(
@@ -103,7 +118,6 @@ async fn main() -> anyhow::Result<()> {
         info: info.clone(),
     };
 
-    // ルーティング
     let app = Router::new()
         .nest_service(HOME_PATH, ServeDir::new("./htdocs"))
         .route(LOGIN_PATH, get(login_handler))
@@ -112,11 +126,30 @@ async fn main() -> anyhow::Result<()> {
         .route(LOGOUT_PATH, get(logout_handler))
         .with_state(app_state);
 
-    println!("Listening on http://{}", info.client_hostname);
-    let listener = TcpListener::bind(info.client_hostname).await?;
-    axum::serve(listener, app)
-        .with_graceful_shutdown(async { signal::ctrl_c().await.unwrap() })
-        .await?;
+    eprintln!("Listening on {}://{}:{}", info.client_protocol, info.client_hostname, info.client_port);
+
+    // 0.0.0.0:{}にすると、ネットワークから受信できます
+    let host_port = format!("127.0.0.1:{}", info.client_port);
+    let address: SocketAddr = host_port.parse().expect("Invalid address format");
+
+    if !info.is_secure {
+        let listener = TcpListener::bind(address).await?;
+        axum::serve(listener, app)
+            .with_graceful_shutdown(async { signal::ctrl_c().await.unwrap() })
+            .await?;
+    } else {
+        let config = RustlsConfig::from_pem_file(
+            PathBuf::from("./cert/cert.pem"), 
+            PathBuf::from("./cert/key.pem")
+        )
+        .await
+        .unwrap();
+
+        axum_server::bind_rustls(address, config)
+            .serve(app.into_make_service())
+            .await
+            .unwrap();
+    }
 
     Ok(())
 }
@@ -145,6 +178,7 @@ async fn login_handler(State(state): State<AppState>, jar: CookieJar) -> Respons
                 pkce_verifier.secret().to_string(), // 暗号化する方が望ましい
                 String::from("/"),
                 true,
+                state.info.is_secure,
             ));
             (three_vars.0, three_vars.1, three_vars.2, jar)
         } else {
@@ -168,6 +202,7 @@ async fn login_handler(State(state): State<AppState>, jar: CookieJar) -> Respons
         sha256text(csrf_token.secret(), &state.info.csrf_salt),
         String::from("/"),
         true,
+        state.info.is_secure,
     ));
 
     // コールバックがKeyCloakにログインできたブラウザーからのものか検証するために、nonceのハッシュ値を保存
@@ -176,6 +211,7 @@ async fn login_handler(State(state): State<AppState>, jar: CookieJar) -> Respons
         sha256text(nonce.secret(), &state.info.nonce_salt),
         String::from("/"),
         true,
+        state.info.is_secure,
     ));
 
     // ブラウザーをKeyCloakにリダイレクトする
@@ -275,6 +311,7 @@ async fn callback_handler(
         .to_string(),
         String::from("/"),
         true,
+        state.info.is_secure,
     ));
 
     // ID TokenをCookieに保存
@@ -283,6 +320,7 @@ async fn callback_handler(
         id_token.to_string(),
         String::from("/"),
         true,
+        state.info.is_secure,
     ));
     // check digitsをつくってCookieに保存
     let jar = jar.add(make_secret_cookie(
@@ -290,6 +328,7 @@ async fn callback_handler(
         sha256text(id_token.to_string().as_str(), state.info.csrf_salt.as_str()).to_string(),
         String::from("/"),
         false,
+        state.info.is_secure,
     ));
 
     // HOMEにリダイレクト
@@ -465,6 +504,7 @@ async fn auth_by_oidc_token(
                 .to_string(),
                 String::from("/"),
                 true,
+                state.info.is_secure,
             ));
             // ID Tokenの再取得
             let id_token = res.id_token().expect("No ID Token");
@@ -482,6 +522,7 @@ async fn auth_by_oidc_token(
                 id_token.to_string(),
                 String::from("/"),
                 true,
+                state.info.is_secure,
             ));
             // check digitsをつくってCookieに保存
             let jar = jar.add(make_secret_cookie(
@@ -490,6 +531,7 @@ async fn auth_by_oidc_token(
                     .to_string(),
                 String::from("/"),
                 false,
+                state.info.is_secure,
             ));
             return Ok((jar, claims_to_map(claims)));
         }
@@ -536,11 +578,12 @@ fn make_secret_cookie<'a>(
     value: String,
     path: String,
     is_http_only: bool,
+    is_secure: bool,
 ) -> Cookie<'a> {
     Cookie::build((name.to_string(), value))
         .path(path)
         .http_only(is_http_only)
-        .secure(false)
+        .secure(is_secure)
         .same_site(SameSite::Lax)
         .build()
 }
