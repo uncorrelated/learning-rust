@@ -3,6 +3,8 @@
 <meta charset="utf-8">
     <head><title>OpenID Connect/KeyCloak Example</title>
     <script>
+        var home_url = window.location.protocol + "//" + window.location.host
+
         function getCookies(){
             return document.cookie.split(';').reduce((acc, cookie) => {
                 const [key, value] = cookie.split('=').map(c => c.trim());
@@ -37,7 +39,7 @@
 
         function login(){
             if(undefined == check_digits){
-               window.location.href = "http://localhost:18080/login";
+               window.location.href = home_url + "/login";
                return false;
             }
         }
@@ -62,7 +64,7 @@
                 } else {
                 }
             }
-            req.open('GET', "http://localhost:18080/api", true);
+            req.open('GET', home_url + "/api", true);
             req.setRequestHeader('Authorization', 'Bearer ' + check_digits);
             req.send(null);
             ta_check_digits.value = check_digits;
@@ -88,7 +90,7 @@
                 } else {
                 }
             }
-            req.open('GET', "http://localhost:18080/logout", true);
+            req.open('GET', home_url + "/logout", true);
             req.setRequestHeader('Authorization', 'Bearer ' + check_digits);
             req.send(null);
             return false;
