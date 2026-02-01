@@ -158,8 +158,8 @@ async fn callback_handler(
     jar: CookieJar,
 ) -> Response {
     // CSRF対策のstateの検証
-    let csrf_token_in_cookie = match jar.get("csrf_token").map(|c| c.value().to_string()) {
-        Some(value) => value,
+    let csrf_token_in_cookie = match jar.get("csrf_token") {
+        Some(c) => c.value(),
         None => {
             return (StatusCode::UNAUTHORIZED, "No State / CSRF Token").into_response();
         }
@@ -450,9 +450,9 @@ fn check_nonce(nonce: Option<&Nonce>, jar: &CookieJar, nonce_salt: &str) -> Resu
         Some(_nonce) => sha256text(_nonce.secret(), nonce_salt),
         None => String::from(""),
     };
-    return match jar.get("nonce").map(|c| c.value().to_string()) {
+    return match jar.get("nonce") {
         Some(nonce_in_cookie) => {
-            if nonce_in_jwt == nonce_in_cookie {
+            if nonce_in_jwt == nonce_in_cookie.value() {
                 Ok(())
             } else {
                 Err(String::from("two nonce are different!"))
