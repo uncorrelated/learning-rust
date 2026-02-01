@@ -43,6 +43,7 @@ struct Info {
     redirect_url: String,
     nonce_salt: String,
     csrf_salt: String,
+    pkce_method: i8,
 }
 
 #[derive(Clone)]
@@ -74,6 +75,14 @@ async fn main() -> anyhow::Result<()> {
             .unwrap_or("http://localhost:18080/callback".to_string()),
         nonce_salt: env::var("NONCE_SALT").unwrap_or("a secret phrase".to_string()),
         csrf_salt: env::var("CSRF_SALT").unwrap_or("another secret phrase".to_string()),
+        pkce_method: match env::var("PKCE_METHOD") {
+            Ok(val) => match val.as_str() {
+                "S256" => 1,
+                "plain" => 2,
+                _ => 0,
+            },
+            Err(_) => 0,
+        },
     };
 
     let provider_metadata = CoreProviderMetadata::discover_async(
@@ -115,15 +124,42 @@ async fn main() -> anyhow::Result<()> {
 // /login Handler: KeyCloakにログインする前の準備を行う
 async fn login_handler(State(state): State<AppState>, jar: CookieJar) -> Response {
     // OpenID Connectと通信するための一時コード等を作成
-    let (auth_url, csrf_token, nonce) = state
-        .oidc_client
-        .authorize_url(
-            AuthenticationFlow::<CoreResponseType>::AuthorizationCode,
-            CsrfToken::new_random,
-            Nonce::new_random,
-        )
-        .add_scope(Scope::new("openid".to_string()))
-        .url();
+    let (auth_url, csrf_token, nonce, jar) = {
+        if 1 == state.info.pkce_method {
+            // PKCE のチャレンジャーとベリファイアを生成
+            let (pkce_challenge, pkce_verifier) =
+                openidconnect::PkceCodeChallenge::new_random_sha256();
+            let three_vars = state
+                .oidc_client
+                .authorize_url(
+                    AuthenticationFlow::<CoreResponseType>::AuthorizationCode,
+                    CsrfToken::new_random,
+                    Nonce::new_random,
+                )
+                .add_scope(Scope::new("openid".to_string()))
+                .set_pkce_challenge(pkce_challenge) // PKCEのために追加
+                .url();
+            // pkce_verifierをCookieに保存
+            let jar = jar.add(make_secret_cookie(
+                "pkce_verifier",
+                pkce_verifier.secret().to_string(), // 暗号化する方が望ましい
+                String::from("/"),
+                true,
+            ));
+            (three_vars.0, three_vars.1, three_vars.2, jar)
+        } else {
+            let three_vars = state
+                .oidc_client
+                .authorize_url(
+                    AuthenticationFlow::<CoreResponseType>::AuthorizationCode,
+                    CsrfToken::new_random,
+                    Nonce::new_random,
+                )
+                .add_scope(Scope::new("openid".to_string()))
+                .url();
+            (three_vars.0, three_vars.1, three_vars.2, jar)
+        }
+    };
 
     // セッションを使わない方針なので、検証用トークンはそのまま保存せず、シークレットキーを足してハッシュ化したものを保存する
     // CSRF対策のstateトークンのハッシュ値を保存
@@ -169,12 +205,28 @@ async fn callback_handler(
     }
 
     // 認可コードからトークンを取得
-    let token_response = match state
-        .oidc_client
-        .exchange_code(openidconnect::AuthorizationCode::new(query.code))
-        .request_async(async_http_client)
-        .await
-    {
+    let token_response = match {
+        if 1 == state.info.pkce_method {
+            // Cookieからpkce_verifierを取得
+            let pkce_verifier_str = match jar.get("pkce_verifier") {
+                Some(v) => v.value().to_string(),
+                None => return (StatusCode::UNAUTHORIZED, "Missing PKCE verifier").into_response(),
+            };
+            let pkce_verifier = openidconnect::PkceCodeVerifier::new(pkce_verifier_str);
+            state
+                .oidc_client
+                .exchange_code(openidconnect::AuthorizationCode::new(query.code))
+                .set_pkce_verifier(pkce_verifier) // PKCEのために追加
+                .request_async(async_http_client)
+                .await
+        } else {
+            state
+                .oidc_client
+                .exchange_code(openidconnect::AuthorizationCode::new(query.code))
+                .request_async(async_http_client)
+                .await
+        }
+    } {
         Ok(token) => token,
         Err(e) => {
             return (
