@@ -142,8 +142,6 @@ async fn login_handler(State(state): State<AppState>, jar: CookieJar) -> Respons
         true,
     ));
 
-    eprintln!("{}", auth_url.as_str());
-
     // ブラウザーをKeyCloakにリダイレクトする
     (
         StatusCode::TEMPORARY_REDIRECT,
