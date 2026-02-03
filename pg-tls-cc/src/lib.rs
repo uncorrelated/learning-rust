@@ -1,4 +1,5 @@
 use deadpool_postgres::{Manager, Pool, Runtime};
+use std::fmt;
 use std::path::PathBuf;
 use tokio_postgres::Client;
 use tokio_postgres::NoTls;
@@ -9,6 +10,19 @@ pub fn expand_home(path: &str) -> PathBuf {
     let home = std::env::var("HOME").expect("HOME environment variable not set");
     PathBuf::from(path.replace("~", &home))
 }
+
+#[derive(Debug)]
+struct PgConnectionError {
+    msg: String,
+}
+
+impl fmt::Display for PgConnectionError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.msg)
+    }
+}
+
+impl std::error::Error for PgConnectionError {}
 
 pub async fn create_client(
     connector: Option<MakeRustlsConnect>,
@@ -28,7 +42,15 @@ pub async fn create_client(
             client
         }
         None => {
-            let (client, connection) = pg_config.connect(NoTls).await.expect("");
+            let (client, connection) = match pg_config.connect(NoTls).await {
+                Ok(t) => t,
+                Err(e) => {
+                    return Err((PgConnectionError {
+                        msg: format!("{}", e),
+                    })
+                    .into());
+                }
+            };
             tokio::spawn(async move {
                 if let Err(e) = connection.await {
                     eprintln!("Postgres connection error: {}", e);
