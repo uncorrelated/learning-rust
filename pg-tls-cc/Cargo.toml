@@ -1,0 +1,16 @@
+[package]
+name = "pg-tls-cc"
+version = "0.1.0"
+edition = "2024"
+default-run = "pg-tls-cc"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+tokio-postgres = "0.7"
+tokio-postgres-rustls = "0.12" # rustls 0.23対応
+rustls = { version = "0.23", features = ["ring"] } # デフォルトプロバイダ(ring)を有効化
+rustls-pki-types = "1"
+rustls-pemfile = "2"
+deadpool-postgres = "0.14"
+futures = "0.3"
+
