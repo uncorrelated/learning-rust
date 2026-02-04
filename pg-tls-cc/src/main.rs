@@ -9,9 +9,15 @@ const HOST: &str = "localhost";
 const USER: &str = "pgusr";
 const DBNAME: &str = "empty_db";
 
+const CA_CRT: &str = "~/.ssl/ca_DevRealm-crt.pem";
+const CLIENT_CRT: &str = "~/.ssl/pgclient-cert.pem";
+const CLIENT_KEY: &str = "~/.ssl/pgclient-key.pem";
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // 暗号化処理のエンジンとして ring クレートを使用する
     let _ = rustls::crypto::ring::default_provider().install_default();
+
     let connector = create_connector().unwrap();
     // sslmode は connector 側で制御されるため指定不要
     let connection_string = format!("host={} dbname={} user={}", HOST, DBNAME, USER);
@@ -30,9 +36,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 fn create_connector() -> Result<MakeRustlsConnect, Box<dyn std::error::Error>> {
     // 認証局証明書、クライアント証明書、クライアント秘密鍵のファイルパス
-    let ca_path = expand_home("~/.ssl/ca_DevRealm-crt.pem");
-    let cert_path = expand_home("~/.ssl/pgclient-cert.pem");
-    let key_path = expand_home("~/.ssl/pgclient-key.pem");
+    let ca_path = expand_home(CA_CRT);
+    let cert_path = expand_home(CLIENT_CRT);
+    let key_path = expand_home(CLIENT_KEY);
 
     // CA証明書のロード
     let mut root_store = RootCertStore::empty();

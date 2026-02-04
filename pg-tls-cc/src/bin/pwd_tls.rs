@@ -10,9 +10,10 @@ const USER: &str = "pgusr";
 const DBNAME: &str = "empty_db";
 const PASSWORD: &str = "u0b2u1n9t2s3u";
 
+const CA_CRT: &str = "~/.ssl/ca_DevRealm-crt.pem";
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let _ = rustls::crypto::ring::default_provider().install_default();
     let connector = create_connector().unwrap();
     let connection_string = format!(
         "host={} dbname={} user={} password={}",
@@ -27,8 +28,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn create_connector() -> Result<MakeRustlsConnect, Box<dyn std::error::Error>> {
+    // 暗号化処理のエンジンとして ring クレートを使用する
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
     // 認証局証明書のファイルパス
-    let ca_path = expand_home("~/.ssl/ca_DevRealm-crt.pem");
+    let ca_path = expand_home(CA_CRT);
 
     // CA証明書のロード
     let mut root_store = RootCertStore::empty();
