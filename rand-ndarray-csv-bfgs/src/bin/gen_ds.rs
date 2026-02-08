@@ -14,13 +14,13 @@ fn main() -> std::io::Result<()> {
     for i in 1..=30 {
         let j = i / 13;
         let lambda = exp((0.01 as f64) + 0.1 * (i as f64) + 0.05 * (j as f64));
-        writeln!(writer, "{},{},{}", i, j, rpoi(&mut rng, lambda))?;
+        writeln!(writer, "{},{},{}", i, j, rpois(&mut rng, lambda))?;
     }
     Ok(())
 }
 
 // ポアソン分布を生成する
-fn rpoi<T: Rng>(rng: &mut T, lambda: f64) -> u64 {
+fn rpois<T: Rng>(rng: &mut T, lambda: f64) -> u64 {
     let mut k: u64 = 0;
     let mut xp = runif(rng);
     while xp >= (-lambda).exp() {
