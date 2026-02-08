@@ -35,7 +35,6 @@ where
             let lambda = exp(lp[i]);
             dlambda[j] += y[i] * x[[i, j]] - x[[i, j]] * lambda;
         }
-        //        dlambda[j] *= -1_f64;
     }
     dlambda
 }
