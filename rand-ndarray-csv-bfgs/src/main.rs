@@ -1,5 +1,5 @@
 use csv::ReaderBuilder;
-use ndarray::{Array1, Array2, Axis, array, concatenate};
+use ndarray::{Array1, Array2, Axis, concatenate};
 use rand_ndarray_csv_bfgs::{CSV_FILE, llf, llfg};
 use std::fs::File;
 use wolfe_bfgs::{Bfgs, BfgsSolution};
@@ -29,7 +29,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     // 初期値
-    let beta = array![0_f64, 0_f64, 0_f64];
+    let beta = Array1::<f64>::from_elem(x.ncols(), 0.0);
 
     // BFGSソルバーを動かす
     let BfgsSolution {
