@@ -28,6 +28,9 @@ use std::str::FromStr;
 use tokio::{net::TcpListener, signal};
 use tower_http::services::ServeDir;
 use std::net::{SocketAddr};
+use tower_http::trace::TraceLayer;
+use tracing::{info};
+use tracing_subscriber::EnvFilter;
 
 const HOME_PATH: &str = "/";
 const LOGIN_PATH: &str = "/login";
@@ -100,6 +103,16 @@ async fn main() -> anyhow::Result<()> {
             .starts_with("https"),
     };
 
+    // Loggerの初期化
+    // 環境変数でLogging Levelを設定可能（e.g. RUST_LOG=info, RUST_LOG=debug）
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            EnvFilter::try_from_default_env()
+                .or_else(|_| EnvFilter::try_new("axum_oidc=trace,tower_http=trace"))
+                .unwrap(),
+        )
+        .init();
+
     let provider_metadata = CoreProviderMetadata::discover_async(
         IssuerUrl::new(info.keycloak_url.clone())?,
         async_http_client,
@@ -124,9 +137,10 @@ async fn main() -> anyhow::Result<()> {
         .route(REDIRECT_PATH, get(callback_handler))
         .route(PROTECTED_PATH, get(protected_handler))
         .route(LOGOUT_PATH, get(logout_handler))
+        .layer(TraceLayer::new_for_http()) // 自動でSpanを作成し、挿入するための、TraceLayerを追加する
         .with_state(app_state);
 
-    eprintln!("Listening on {}://{}:{}", info.client_protocol, info.client_hostname, info.client_port);
+    info!("Listening on {}://{}:{}", info.client_protocol, info.client_hostname, info.client_port); // Logging Levelに応じて、trace! , debug! , info! , warn! , error!のマクロが使える
 
     // 0.0.0.0:{}にすると、ネットワークから受信できます
     let host_port = format!("127.0.0.1:{}", info.client_port);
@@ -394,7 +408,7 @@ async fn logout_handler(
                     )
                         .into_response();
                     // レスポンスボディを確認したい場合
-                    // eprintln!("Body: {:?}", res.text().await);
+                    // info!("Body: {:?}", res.text().await);
                 }
             }
             Err(e) => {
