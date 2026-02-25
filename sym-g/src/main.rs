@@ -24,11 +24,11 @@ fn main() {
 
     // 引数を整理
     let filename = &args[1];
-    let source_words = parse_alternating_group_string(&args[2]);
-    let target_words = parse_alternating_group_string(&args[3]);
+    let source_words = parse_symmetric_group_string(&args[2]);
+    let target_words = parse_symmetric_group_string(&args[3]);
 
     // バリデーション（要素数、構成単語の一致、重複チェック）
-    validate_alternating_group(&source_words, &target_words);
+    validate_symmetric_group(&source_words, &target_words);
 
     // 置換マップ作成 (String -> String)
     let substitution_map: HashMap<String, String> = source_words
@@ -75,7 +75,7 @@ fn main() {
 }
 
 /// 文字列をスペースで分割して Vec<String> を返す
-fn parse_alternating_group_string(input: &str) -> Vec<String> {
+fn parse_symmetric_group_string(input: &str) -> Vec<String> {
     input
         .trim_matches(|c| c == '(' || c == ')')
         .split_whitespace()
@@ -118,7 +118,7 @@ fn replace_multiple(text: &str, map: &HashMap<String, String>, keys: &[String]) 
 }
 
 // 置換群になっているか検証
-fn validate_alternating_group(s_words: &[String], t_words: &[String]) {
+fn validate_symmetric_group(s_words: &[String], t_words: &[String]) {
     if s_words.len() != t_words.len() {
         eprintln!("エラー: 要素数が一致しません。");
         process::exit(1);
